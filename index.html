@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reelwright — stories in, films out</title>
+<style>
+  :root{--bg:#080b10;--surface:#0e131a;--line:rgba(255,255,255,.09);--text:#eef2f7;--text2:#a3adbd;--accent:#ffac02}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:720px;margin:0 auto;padding:72px 24px 96px}
+  h1{font-size:2.2rem;line-height:1.1;margin:0 0 8px;letter-spacing:-.01em}
+  h2{font-size:1.05rem;text-transform:uppercase;letter-spacing:.12em;color:var(--text2);margin:48px 0 12px}
+  p,li{color:#cfd6e0}
+  .sub{color:var(--text2);margin:0 0 40px}
+  .rule{height:1px;background:var(--line);margin:40px 0}
+  a{color:var(--accent)}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:.9em;background:var(--surface);padding:2px 6px;border-radius:2px}
+  footer{margin-top:64px;color:#6b7686;font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>Reelwright</h1>
+  <p class="sub">Stories in. Films out.</p>
+
+  <p>Reelwright is a desktop application that turns a written story into a finished vertical short video: it writes or accepts a story, narrates it with a text-to-speech voice, burns word-timed captions over a background clip, and renders an MP4. It runs locally on the user's own computer; there is no Reelwright server and no account.</p>
+
+  <h2>What it does with YouTube</h2>
+  <p>Optionally, Reelwright can upload the videos it renders to a YouTube channel that the user owns. That is the only use of YouTube data:</p>
+  <ul>
+    <li>It asks for permission to <strong>upload videos</strong> to the user's channel and to read the channel's basic details (name and avatar) so the rendered title card can match the channel.</li>
+    <li>An upload happens only when the user presses <em>Publish</em> on a finished video, or enables automatic publishing for a batch they started. Nothing is uploaded in the background.</li>
+    <li>It reads nothing else from YouTube: no watch history, no subscriptions, no comments, no other channels' data.</li>
+  </ul>
+
+  <h2>Where data lives</h2>
+  <p>Everything stays on the user's computer. Stories, audio, renders and OAuth tokens are stored in the application's own local data folder, readable only by the user. Reelwright has no backend and sends nothing to its author.</p>
+
+  <div class="rule"></div>
+  <p><a href="privacy.html">Privacy policy</a> · <a href="terms.html">Terms of service</a></p>
+
+  <footer>Reelwright is a personal, single-user application. It is not a service you sign up for.</footer>
+</main>
+</body>
+</html>
