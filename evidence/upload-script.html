@@ -1,0 +1,195 @@
+<!doctype html><meta charset="utf-8"><style>
+body{font:13px/1.5 -apple-system,Segoe UI,sans-serif;color:#111;margin:40px 48px;max-width:900px}
+h1{font-size:20px;margin:0 0 4px} h2{font-size:14px;margin:24px 0 6px;text-transform:uppercase;letter-spacing:.08em;color:#555}
+pre{background:#f6f7f9;border:1px solid #e2e4e8;border-radius:6px;padding:12px;overflow-wrap:anywhere;white-space:pre-wrap;font:11px/1.45 ui-monospace,Menlo,monospace}
+</style>
+<h1>Reelwright — YouTube upload implementation</h1>
+<pre style="background:#fff;border:0;padding:0">Reelwright — YouTube upload implementation and live evidence
+
+Project: Reelwright (reelwright-513015), project number 984445733063
+OAuth client: Desktop app, PKCE, loopback redirect http://127.0.0.1:8877/api/youtube/oauth/callback
+Scope requested: https://www.googleapis.com/auth/youtube.upload (only scope used)
+Endpoint called: POST https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&amp;part=snippet,status
+
+Live run on 28 October 2026, channel &quot;Average Cow&quot;:
+  request : POST /api/jobs/1a03c4f8-409f-42f5-b582-ced4958bedf6/publish  {&quot;privacy&quot;:&quot;private&quot;}
+  result  : {&quot;state&quot;:&quot;done&quot;,&quot;progress&quot;:100,&quot;videoId&quot;:&quot;SD4PneZtVh4&quot;,&quot;url&quot;:&quot;https://youtu.be/SD4PneZtVh4&quot;}
+  privacy : private — YouTube forces private for API clients that have not completed this audit.
+
+The upload is a resumable session: open the session, then PUT 8 MiB chunks with
+Content-Range, then read the final video resource. A dropped chunk is recovered by
+asking YouTube how many bytes it has (308 + Range) and resuming from that offset.
+The source below is the complete module that performs it.</pre>
+<h2>server/src/youtube/upload.ts</h2>
+<pre>import { open } from &quot;node:fs/promises&quot;;
+import type { YouTubePrivacy } from &quot;@reelwright/shared&quot;;
+import { TIMEOUTS } from &quot;../timeouts.ts&quot;;
+import { providerErrorText, withTimeout } from &quot;../util/http.ts&quot;;
+import type { HttpRequest } from &quot;../pipeline/tts/openai.ts&quot;;
+
+export const YOUTUBE_UPLOAD_URL = &quot;https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&amp;part=snippet,status&quot;;
+/** Chunks must be multiples of 256 KiB (except the last). */
+export const CHUNK_QUANTUM = 256 * 1024;
+export const DEFAULT_CHUNK = 32 * CHUNK_QUANTUM; // 8 MiB
+
+export interface VideoMeta {
+  title: string;
+  description: string;
+  tags: string[];
+  privacy: YouTubePrivacy;
+}
+
+/** YouTube rejects `&lt;` and `&gt;` in titles and descriptions and caps them at 100 / 5000 characters. */
+export function cleanMeta(m: VideoMeta): VideoMeta {
+  const strip = (s: string) =&gt; s.replace(/[&lt;&gt;]/g, &quot;&quot;).replace(/\s+\n/g, &quot;\n&quot;).trim();
+  const title = strip(m.title).replace(/\s+/g, &quot; &quot;).slice(0, 100) || &quot;Untitled&quot;;
+  return { ...m, title, description: strip(m.description).slice(0, 5000), tags: m.tags.map((t) =&gt; strip(t)).filter(Boolean).slice(0, 30) };
+}
+
+/** Step 1: open a resumable session. The answer&#x27;s Location header is the session URI. */
+export function buildInitRequest(accessToken: string, bytes: number, meta: VideoMeta): HttpRequest {
+  const m = cleanMeta(meta);
+  return {
+    url: YOUTUBE_UPLOAD_URL,
+    method: &quot;POST&quot;,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      &quot;Content-Type&quot;: &quot;application/json; charset=UTF-8&quot;,
+      &quot;X-Upload-Content-Length&quot;: String(bytes),
+      &quot;X-Upload-Content-Type&quot;: &quot;video/mp4&quot;,
+    },
+    body: JSON.stringify({
+      snippet: { title: m.title, description: m.description, tags: m.tags, categoryId: &quot;22&quot; },
+      status: { privacyStatus: m.privacy, selfDeclaredMadeForKids: false },
+    }),
+  };
+}
+
+/** Headers for one chunk [start, end] (inclusive) of a `total`-byte file. */
+export function chunkHeaders(accessToken: string, start: number, end: number, total: number): Record&lt;string, string&gt; {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    &quot;Content-Length&quot;: String(end - start + 1),
+    &quot;Content-Range&quot;: `bytes ${start}-${end}/${total}`,
+    &quot;Content-Type&quot;: &quot;video/mp4&quot;,
+  };
+}
+
+/** &quot;How much did you get?&quot; — an empty PUT with `Content-Range: bytes * /total`, answered with 308 + Range. */
+export function statusQueryHeaders(accessToken: string, total: number): Record&lt;string, string&gt; {
+  return { Authorization: `Bearer ${accessToken}`, &quot;Content-Length&quot;: &quot;0&quot;, &quot;Content-Range&quot;: `bytes */${total}` };
+}
+
+/** Next byte offset from a 308&#x27;s Range header (`bytes=0-524287` → 524288; absent → 0). */
+export function nextOffset(range: string | null): number {
+  if (!range) return 0;
+  const m = /^bytes=0-(\d+)$/.exec(range.trim());
+  if (!m?.[1]) throw new Error(`unexpected Range header from YouTube: ${range}`);
+  return Number(m[1]) + 1;
+}
+
+export interface UploadDeps {
+  fetchImpl: typeof fetch;
+  /** Current access token; `force` asks for a refresh (after a 401). */
+  accessToken: (force: boolean) =&gt; Promise&lt;string&gt;;
+  signal?: AbortSignal;
+  onProgress?: (sent: number, total: number) =&gt; void;
+  chunkSize?: number;
+  maxRetries?: number;
+  /** Injected for tests; production waits for real. */
+  sleep?: (ms: number) =&gt; Promise&lt;void&gt;;
+}
+
+const realSleep = (ms: number) =&gt; new Promise&lt;void&gt;((r) =&gt; setTimeout(r, ms));
+
+class Retryable extends Error {}
+
+/** Dropped connections (fetch TypeError), timeouts, 5xx and expired tokens are worth retrying. */
+function isTransient(err: unknown): boolean {
+  return err instanceof Retryable || err instanceof TypeError || (err instanceof Error &amp;&amp; err.name === &quot;TimeoutError&quot;);
+}
+
+/**
+ * Upload a file with the resumable protocol: init → chunks; after a dropped connection or a 5xx,
+ * ask the session how many bytes it holds and continue from there. A 401 refreshes the token once.
+ * Returns the new video id.
+ */
+export async function resumableUpload(file: string, total: number, meta: VideoMeta, deps: UploadDeps): Promise&lt;string&gt; {
+  const chunk = deps.chunkSize ?? DEFAULT_CHUNK;
+  if (chunk % CHUNK_QUANTUM !== 0) throw new Error(`chunk size must be a multiple of ${CHUNK_QUANTUM}`);
+  const maxRetries = deps.maxRetries ?? 5;
+  const sleep = deps.sleep ?? realSleep;
+  const call = (url: string, init: RequestInit) =&gt; deps.fetchImpl(url, { ...init, signal: withTimeout(deps.signal, TIMEOUTS.youtubeRequestMs) });
+
+  // 1. open the session (refresh once on 401)
+  let token = await deps.accessToken(false);
+  let init = buildInitRequest(token, total, meta);
+  let res = await call(init.url, { method: init.method, headers: init.headers, body: init.body ?? null });
+  if (res.status === 401) {
+    token = await deps.accessToken(true);
+    init = buildInitRequest(token, total, meta);
+    res = await call(init.url, { method: init.method, headers: init.headers, body: init.body ?? null });
+  }
+  if (!res.ok) throw new Error(`YouTube upload init: ${providerErrorText(res.status, await res.text())}`);
+  const session = res.headers.get(&quot;location&quot;);
+  if (!session) throw new Error(&quot;YouTube did not return an upload session URI&quot;);
+
+  const fh = await open(file, &quot;r&quot;);
+  try {
+    let offset = 0;
+    let retries = 0;
+    const settle = async (r: Response): Promise&lt;string | null&gt; =&gt; {
+      if (r.status === 200 || r.status === 201) {
+        const body = (await r.json()) as { id?: unknown };
+        if (typeof body.id !== &quot;string&quot;) throw new Error(&quot;YouTube finished the upload but returned no video id&quot;);
+        return body.id;
+      }
+      if (r.status === 308) {
+        const next = nextOffset(r.headers.get(&quot;range&quot;));
+        // Only real forward progress refills the retry budget; a status query alone must not.
+        if (next &gt; offset) {
+          retries = 0;
+          deps.onProgress?.(next, total);
+        }
+        offset = next;
+        return null;
+      }
+      if (r.status === 401) {
+        token = await deps.accessToken(true);
+        throw new Retryable(&quot;access token expired&quot;);
+      }
+      if (r.status &gt;= 500) throw new Retryable(`YouTube HTTP ${r.status}`);
+      // 404/410: the session expired; any other 4xx is a final answer from YouTube.
+      throw new Error(`YouTube upload: ${providerErrorText(r.status, await r.text())}`);
+    };
+
+    for (;;) {
+      try {
+        const end = Math.min(offset + chunk, total) - 1;
+        const buf = Buffer.alloc(end - offset + 1);
+        await fh.read(buf, 0, buf.length, offset);
+        const id = await settle(await call(session, { method: &quot;PUT&quot;, headers: chunkHeaders(token, offset, end, total), body: buf }));
+        if (id) {
+          deps.onProgress?.(total, total);
+          return id;
+        }
+      } catch (err) {
+        if (deps.signal?.aborted) throw err;
+        if (!isTransient(err) || retries &gt;= maxRetries) throw err instanceof Retryable ? new Error(`YouTube upload gave up after ${retries} retries: ${err.message}`) : err;
+        retries++;
+        await sleep(TIMEOUTS.youtubeRetryBaseMs * 2 ** (retries - 1));
+        // Ask the session what it already has, then continue from there. If that query also fails
+        // transiently, the next turn re-sends from the last confirmed offset (still within maxRetries).
+        try {
+          const id = await settle(await call(session, { method: &quot;PUT&quot;, headers: statusQueryHeaders(token, total) }));
+          if (id) return id;
+        } catch (qerr) {
+          if (deps.signal?.aborted || !isTransient(qerr)) throw qerr;
+        }
+      }
+    }
+  } finally {
+    await fh.close();
+  }
+}
+</pre>

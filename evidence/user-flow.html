@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Reelwright user flow</title>
+<style>
+ :root{--bg:#080b10;--surface:#0e131a;--line:rgba(255,255,255,.13);--text:#eef2f7;--text2:#a3adbd;--accent:#ffac02;--ok:#3fb950;--err:#f85149}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;width:1600px;height:790px;padding:44px 56px}
+ h1{font-size:30px;margin:0 0 4px}
+ .sub{color:var(--text2);margin:0 0 30px;font-size:15px}
+ .flow{display:flex;align-items:flex-start;gap:10px}
+ .step{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-height:270px}
+ .n{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#1a1204;font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:10px}
+ h2{font-size:15px;margin:0 0 8px}
+ p{margin:0 0 8px;font-size:13.5px;color:#cfd6e0}
+ .mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text2)}
+ .arrow{align-self:center;color:var(--accent);font-size:20px;padding-top:110px}
+ .note{margin-top:26px;display:flex;gap:18px}
+ .note div{flex:1;background:#0b1017;border:1px solid var(--line);border-radius:8px;padding:16px}
+ .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text2);margin-bottom:6px}
+ .ok{color:var(--ok)} .acc{color:var(--accent)}
+</style></head><body>
+<h1>Reelwright — user flow</h1>
+<p class="sub">What the single user does, in order. Every step is visible in the UI and every failure names its cause.</p>
+
+<div class="flow">
+  <div class="step"><div class="n">1</div><h2>Write or generate</h2>
+    <p>Type a premise, or press <b>Generate story</b>. The model streams into an editable text box.</p>
+    <p class="mono">provider: local Ollama by default</p></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="n">2</div><h2>Pick a look and a voice</h2>
+    <p>Five caption presets, four bundled fonts, voice preview. The 9:16 frame shows the real caption at real scale, with the renderer's own line breaks.</p></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="n">3</div><h2>Add a background</h2>
+    <p>Upload a clip or image into the library, or render on a gradient. Optional music, ducked under the narration.</p></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="n">4</div><h2>Render</h2>
+    <p>One press. Stage + percentage appear live; the job survives a restart; cancel kills ffmpeg.</p>
+    <p class="mono">~15 s for a 90 s video on 12 cores</p></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="n">5</div><h2>Publish to YouTube</h2>
+    <p>Optional. <b>Sign in with Google</b> once (loopback redirect, PKCE). Then <b>Publish</b> on a finished job: the app uploads it to the channel that authorized, and shows the watch URL.</p>
+    <p class="mono">only videos.insert is ever called</p></div>
+</div>
+
+<div class="note">
+  <div><div class="k">Consent</div><p>Exactly one scope: <span class="mono">youtube.upload</span>. The consent screen names Reelwright and links its privacy policy and terms; access can be revoked at any time at <span class="mono">myaccount.google.com/permissions</span>.</p></div>
+  <div><div class="k">Uploads are explicit</div><p>There is no scheduler and no background publishing. A job is uploaded only when the user presses Publish on that job, or when a batch he started finishes and he chooses to publish it.</p></div>
+  <div><div class="k">What is read from YouTube</div><p class="acc">Nothing beyond the upload response. No channel listing, no analytics, no other users' data.</p></div>
+</div>
+</body></html>

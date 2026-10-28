@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Reelwright architecture</title>
+<style>
+ :root{--bg:#080b10;--surface:#0e131a;--surface2:#141a23;--line:rgba(255,255,255,.13);--text:#eef2f7;--text2:#a3adbd;--accent:#ffac02;--ok:#3fb950;--blue:#58a6ff}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;width:1600px;height:770px;padding:44px 56px}
+ h1{font-size:30px;margin:0 0 4px;letter-spacing:-.01em}
+ .sub{color:var(--text2);margin:0 0 26px;font-size:15px}
+ .row{display:flex;gap:18px;align-items:stretch;margin-bottom:18px}
+ .box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+ .box h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text2);margin:0 0 8px}
+ .box p{margin:0;font-size:14px;color:#cfd6e0}
+ .mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--text2)}
+ .accent{border-color:rgba(255,172,2,.45)}
+ .accent h2{color:var(--accent)}
+ .arrow{align-self:center;color:var(--accent);font-size:22px;padding:0 2px}
+ .stage{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center}
+ .stage b{display:block;font-size:13px;letter-spacing:.04em}
+ .stage span{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text2)}
+ .cap{color:var(--text2);font-size:12.5px;margin:6px 0 0}
+ .legend{margin-top:22px;display:flex;gap:28px;color:var(--text2);font-size:12.5px}
+ .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+</style></head><body>
+<h1>Reelwright — architecture</h1>
+<p class="sub">One local process, one render path. Nothing leaves the machine except the provider calls the user configures.</p>
+
+<div class="row">
+  <div class="box" style="flex:1.1"><h2>Web UI — React 19 + Vite</h2>
+    <p>Workspace · Batch · Library · Settings · job drawer. Talks to the server over JSON + SSE; no business logic of its own.</p>
+    <p class="mono" style="margin-top:8px">preview mirrors the renderer's line breaks</p></div>
+  <div class="arrow">→</div>
+  <div class="box accent" style="flex:1.2"><h2>Fastify API — 127.0.0.1:8877</h2>
+    <p>zod-validated routes · origin guard (DNS-rebinding) · write-only secrets · SSE progress · Range video streaming.</p>
+    <p class="mono" style="margin-top:8px">0.0.0.0 never; 127.0.0.1 or the operator's chosen host</p></div>
+  <div class="arrow">→</div>
+  <div class="box" style="flex:1"><h2>Job queue</h2>
+    <p>SQLite (<span class="mono">node:sqlite</span>, WAL). Persisted stages, cancel kills the process group, restart marks orphans failed.</p>
+    <p class="mono" style="margin-top:8px">concurrency 1–16 · per-process thread budget</p></div>
+</div>
+
+<div class="row">
+  <div class="box" style="width:100%"><h2>Pipeline — each stage is one module with one job</h2>
+    <div class="row" style="margin:10px 0 0">
+      <div class="stage"><b>story</b><span>Ollama · OpenAI · Anthropic · Gemini · …</span></div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>narration</b><span>edge-tts · espeak · OpenAI · ElevenLabs</span></div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>timings</b><span>engine words → LCS align → estimate</span></div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>captions</b><span>ASS with \k karaoke, libass</span></div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>encode</b><span>ffmpeg · x264 · AAC · loudnorm</span></div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>finalize</b><span>MP4 + .ass kept beside it</span></div>
+    </div>
+    <p class="cap">One ffmpeg invocation per job: background loop → music ducked by sidechain → narration (loudnorm, atempo) → <span class="mono">ass=</span> last in the graph → <span class="mono">-shortest</span>.</p></div>
+</div>
+
+<div class="row">
+  <div class="box" style="flex:1"><h2>Local storage — data/</h2>
+    <p><span class="mono">reelwright.db</span> · <span class="mono">assets/</span> (content-addressed) · <span class="mono">outputs/</span> · <span class="mono">secrets.json 0600</span> · <span class="mono">youtube-token.json 0600</span></p></div>
+  <div class="box" style="flex:1.05"><h2>YouTube — optional, ENABLE_YOUTUBE=1</h2>
+    <p>PKCE on the loopback redirect → resumable <span class="mono">videos.insert</span> → the only endpoint ever called. Uploads go only to the channel that authorized.</p></div>
+  <div class="box" style="flex:.95"><h2>Never</h2>
+    <p>No telemetry, no hosted backend, no CDN at runtime, no reading of watch history, subscriptions or other channels.</p></div>
+</div>
+
+<div class="legend">
+  <span><i class="dot" style="background:var(--accent)"></i>request path</span>
+  <span><i class="dot" style="background:var(--ok)"></i>state that survives a restart</span>
+  <span><i class="dot" style="background:var(--blue)"></i>network egress, user-configured only</span>
+  <span class="mono">github.com/YourAverageCow/reelwright-site</span>
+</div>
+</body></html>
