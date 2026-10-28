@@ -41,6 +41,7 @@
 | Stolen Parking Spot | https://youtu.be/SD4PneZtVh4 | first live upload |
 | The Letter Dated Tomorrow | https://youtu.be/K9gRiLPjIzQ | recorded run |
 | (batch test) | https://youtu.be/nHDHOAyUIfc | recorded run |
+| (recording rehearsal) | https://youtu.be/YdWJDiTw42c | discarded take of the screencast |
 | (screencast run) | https://youtu.be/b2V6PoddiAI | the run shown in the screencast |
 
 All are **private**: YouTube forces private visibility for API clients that have not completed this audit. That is the restriction this submission exists to lift.
